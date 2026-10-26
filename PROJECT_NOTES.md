@@ -1,5 +1,3 @@
 # Domain implementation notes
 
-A research scaffold for aligned image and tabular inputs. The current executable baseline validates tabular labels and splits; fusion architecture remains an explicit extension point.
-
-The shared baseline in `src/hybrid/` is executable now. Domain-specific model implementations are planned work and must be evaluated using documented data splits.
+The model supports raw RGB images plus tabular rows through CNN and MLP encoders with a shared cross-entropy objective, as well as a late-fusion head for precomputed embeddings. Splits preserve row alignment; validation selects model state before held-out testing.

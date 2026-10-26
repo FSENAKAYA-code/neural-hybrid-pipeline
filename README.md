@@ -28,6 +28,12 @@ The demo uses generated toy data only. Replace it with data you are allowed to u
 - Fit preprocessing steps on training data only. Use validation results for model selection; report the test result once for the chosen configuration.
 - Check the project's `src/hybrid/` code and tests before adapting it to real data.
 
+## Domain workflow
+
+- The default demo generates paired RGB tensors and tabular rows in memory. For real work, ensure each image and tabular row share the same stable sample key before splitting.
+- `JointHybridClassifier` encodes RGB images with a small CNN and tabular features with an MLP, then optimizes a unified cross-entropy objective. A stratified 60/20/20 split reports train/validation losses and held-out test metrics.
+- No images, data, or model weights are included.
+
 ## Repository layout
 
 ```text
