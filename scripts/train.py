@@ -1,15 +1,16 @@
-"""Run a small deterministic demo; no external data is fetched."""
+"""Run a small aligned multimodal embedding demo without external data."""
 
-from sklearn.datasets import make_classification
+import torch
 
-from hybrid.experiment import run_experiment
+from hybrid.experiment import train_fusion_head
 
 
 def main() -> None:
-    X, y = make_classification(
-        n_samples=500, n_features=12, n_informative=8, random_state=42
-    )
-    print(run_experiment(X, y, random_state=42))
+    torch.manual_seed(42)
+    labels = torch.arange(300) % 3
+    image_embeddings = torch.randn(300, 32) + labels[:, None] * 0.15
+    tabular_features = torch.randn(300, 8) + labels[:, None] * 0.15
+    print(train_fusion_head(image_embeddings, tabular_features, labels, epochs=5))
 
 
 if __name__ == "__main__":

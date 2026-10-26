@@ -1,43 +1,76 @@
-"""Leakage-aware baseline training and final held-out evaluation."""
+"""Train and evaluate a late-fusion head on aligned image/tabular embeddings."""
 
-from typing import Any
+from copy import deepcopy
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+import torch
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from torch import nn
 
-from hybrid.splits import split_data
+from hybrid.fusion import LateFusionHead
 
 
-def run_experiment(X: Any, y: Any, *, random_state: int = 42) -> dict[str, float]:
-    """Select with validation data, refit on train+validation, test once."""
-    parts = split_data(X, y, random_state=random_state)
-    model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
-    model.fit(parts.X_train, parts.y_train)
-    validation_score = f1_score(
-        parts.y_validation, model.predict(parts.X_validation), average="weighted"
+def train_fusion_head(
+    image_embeddings: torch.Tensor,
+    tabular_features: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    epochs: int = 10,
+    seed: int = 42,
+) -> dict[str, float]:
+    if image_embeddings.ndim != 2 or tabular_features.ndim != 2 or labels.ndim != 1:
+        raise ValueError("expected 2D feature matrices and 1D labels")
+    if not (len(image_embeddings) == len(tabular_features) == len(labels)):
+        raise ValueError("paired image and tabular rows must be aligned")
+    if epochs < 1:
+        raise ValueError("epochs must be positive")
+    label_values = labels.detach().cpu().numpy()
+    if min(torch.unique(labels, return_counts=True)[1]).item() < 5:
+        raise ValueError("each class needs at least five examples for three-way evaluation")
+    indices = list(range(len(labels)))
+    train_val, test = train_test_split(
+        indices, test_size=0.2, random_state=seed, stratify=label_values
     )
-    model.fit(
-        _concat(parts.X_train, parts.X_validation),
-        _concat(parts.y_train, parts.y_validation),
+    train, validation = train_test_split(
+        train_val,
+        test_size=0.25,
+        random_state=seed,
+        stratify=label_values[train_val],
     )
-    predictions = model.predict(parts.X_test)
+    torch.manual_seed(seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    image_embeddings = image_embeddings.float().to(device)
+    tabular_features = tabular_features.float().to(device)
+    labels = labels.long().to(device)
+    classes = int(labels.max().item()) + 1
+    model = LateFusionHead(image_embeddings.shape[1], tabular_features.shape[1], classes).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    loss_function = nn.CrossEntropyLoss()
+    best_state = deepcopy(model.state_dict())
+    best_validation_accuracy = -1.0
+
+    for _ in range(epochs):
+        model.train()
+        optimizer.zero_grad(set_to_none=True)
+        logits = model(image_embeddings[train], tabular_features[train])
+        loss = loss_function(logits, labels[train])
+        loss.backward()
+        optimizer.step()
+        model.eval()
+        with torch.no_grad():
+            validation_predictions = model(
+                image_embeddings[validation], tabular_features[validation]
+            ).argmax(dim=1)
+        score = accuracy_score(labels[validation].cpu(), validation_predictions.cpu())
+        if score > best_validation_accuracy:
+            best_validation_accuracy = float(score)
+            best_state = deepcopy(model.state_dict())
+
+    model.load_state_dict(best_state)
+    model.eval()
+    with torch.no_grad():
+        test_predictions = model(image_embeddings[test], tabular_features[test]).argmax(dim=1)
     return {
-        "validation_f1_weighted": float(validation_score),
-        "test_accuracy": float(accuracy_score(parts.y_test, predictions)),
-        "test_f1_weighted": float(
-            f1_score(parts.y_test, predictions, average="weighted")
-        ),
+        "validation_accuracy": best_validation_accuracy,
+        "test_accuracy": float(accuracy_score(labels[test].cpu(), test_predictions.cpu())),
     }
-
-
-def _concat(left: Any, right: Any) -> Any:
-    """Concatenate NumPy-like or pandas inputs without changing their rows."""
-    if hasattr(left, "iloc"):
-        import pandas as pd
-
-        return pd.concat([left, right], axis=0)
-    import numpy as np
-
-    return np.concatenate([left, right], axis=0)
