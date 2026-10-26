@@ -1,0 +1,20 @@
+[project]
+name = "neural-hybrid-pipeline"
+version = "0.1.0"
+description = "A modular starting point for combining image and tabular features"
+requires-python = ">=3.12,<3.13"
+dependencies = ["numpy>=1.26", "scikit-learn>=1.4"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
