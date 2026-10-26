@@ -1,6 +1,5 @@
 """Run a small deterministic demo; no external data is fetched."""
 
-import numpy as np
 from sklearn.datasets import make_classification
 
 from hybrid.experiment import run_experiment
